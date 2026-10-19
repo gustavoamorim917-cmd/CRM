@@ -1,0 +1,19 @@
+IMPORTANTE
+
+Nao execute o INICIAR_APP.bat diretamente de dentro do arquivo ZIP.
+
+Passo a passo:
+
+1. Clique com o botao direito no ZIP.
+2. Escolha "Extrair Tudo".
+3. Abra a pasta extraida "sp_integrado".
+4. De dois cliques em INICIAR_APP.bat.
+5. Mantenha a janela aberta enquanto estiver usando o app.
+
+Para o app abrir sozinho quando o Windows iniciar:
+
+1. Extraia o ZIP.
+2. Abra a pasta extraida "sp_integrado".
+3. Execute INSTALAR_INICIAR_COM_WINDOWS.bat uma vez.
+
+Se aparecer "127.0.0.1 recusou a conexao", execute PARAR_APP.bat e depois INICIAR_APP.bat novamente.

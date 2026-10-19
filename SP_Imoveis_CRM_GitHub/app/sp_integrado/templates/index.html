@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SP Im&oacute;veis CRM</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">SP</div>
+        <div>
+          <strong>SP Im&oacute;veis</strong>
+          <span>CRM / WhatsApp</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <button class="nav-button active" data-view="crm">CRM</button>
+        <button class="nav-button" data-view="blaster">Disparador</button>
+        <button class="nav-button" data-view="imoveis" id="imoveis-nav-btn">Im&oacute;veis</button>
+        <div class="subnav" id="imoveis-subnav" hidden>
+          <button class="subnav-button" data-view="selector">Sele&ccedil;&atilde;o Interna</button>
+          <button class="subnav-button" data-view="selecao-externa">Sele&ccedil;&atilde;o Externa</button>
+          <button class="subnav-button" data-view="apresentacoes">Apresenta&ccedil;&otilde;es prontas</button>
+        </div>
+      </nav>
+      <div class="sidebar-footer">
+        <span id="health-status">Inicializando</span>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <h1 id="view-title">CRM WhatsApp</h1>
+          <p id="view-subtitle">Pipeline comercial com contatos, notas e mensagens internas.</p>
+        </div>
+        <div class="topbar-actions">
+          <button class="ghost-button" id="refresh-board-btn">Atualizar</button>
+          <button class="primary-button" id="new-contact-btn">Novo contato</button>
+        </div>
+      </header>
+
+      <section class="view active" id="view-crm">
+        <div class="toolbar">
+          <label class="field compact">
+            <span>Buscar</span>
+            <input id="crm-search" type="search" placeholder="Nome, telefone, nota">
+          </label>
+          <label class="field compact">
+            <span>Tipo</span>
+            <select id="crm-kind-filter">
+              <option value="">Todos</option>
+              <option>Cliente</option>
+              <option>Corretor</option>
+              <option>Proprietario</option>
+            </select>
+          </label>
+          <label class="field compact">
+            <span>Data de cria&ccedil;&atilde;o</span>
+            <select id="crm-date-sort">
+              <option value="created_desc">Mais recentes primeiro</option>
+              <option value="created_asc">Mais antigos primeiro</option>
+            </select>
+          </label>
+          <label class="file-button" title="Primeira coluna: A altera, E exclui, I insere, vazio ignora.">
+            Edi&ccedil;&atilde;o em massa
+            <input id="crm-import-file" type="file" accept=".xlsx,.xls,.csv">
+          </label>
+          <a class="link-button" href="/api/crm/template" title="Modelo com coluna Acao: A, E, I ou vazio.">Baixar modelo A/E/I</a>
+          <button class="link-button" id="export-columns-btn" type="button">Baixar colunas</button>
+          <button class="secondary-button" id="new-stage-btn">Nova coluna</button>
+          <button class="secondary-button" id="sync-leads-btn" title="Baixa o relatório de Leads do Imobzi e adiciona os leads novos direto na coluna Ativo.">Sincronizar Leads (Imobzi)</button>
+        </div>
+        <section class="panel leads-sync-panel" id="leads-sync-panel" hidden>
+          <div class="panel-head">
+            <h2>Sincronização de Leads (Imobzi)</h2>
+            <span class="status-pill" id="leads-sync-status">Inativo</span>
+          </div>
+          <p class="muted">Abre o Chrome, baixa o relatório de Leads do Imobzi e adiciona direto no CRM (coluna Ativo) todo lead cujo telefone ainda não existe.</p>
+          <div class="button-row">
+            <button class="danger-button" id="stop-leads-sync-btn" disabled>Cancelar</button>
+            <button class="ghost-button small" id="clear-leads-sync-log-btn">Limpar log</button>
+            <button class="ghost-button small" id="hide-leads-sync-panel-btn">Fechar</button>
+          </div>
+          <div class="current-target" id="leads-sync-summary">Nenhuma sincronização em andamento.</div>
+          <div class="log-box" id="leads-sync-log"></div>
+        </section>
+        <div class="dashboard-grid" id="crm-dashboard"></div>
+        <div class="board" id="crm-board"></div>
+      </section>
+
+      <section class="view" id="view-blaster">
+        <div class="module-grid blaster-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Disparar por coluna</h2>
+              <span class="muted" id="active-contact-count">0 contatos</span>
+            </div>
+            <label class="field">
+              <span>Coluna do CRM</span>
+              <select id="crm-blaster-stage"></select>
+            </label>
+            <div class="button-row">
+              <button class="secondary-button" id="select-all-active-btn">Selecionar todos</button>
+              <button class="ghost-button" id="clear-active-selection-btn">Limpar sele&ccedil;&atilde;o</button>
+            </div>
+            <div class="active-contact-list" id="active-contact-list"></div>
+            <label class="field">
+              <span>Mensagem para os selecionados</span>
+              <textarea id="crm-blaster-message" rows="5" placeholder="Use {nome} para personalizar com o nome do contato."></textarea>
+            </label>
+            <div class="button-row">
+              <button class="primary-button" id="load-active-blaster-btn">Carregar no disparador</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Planilha de disparos</h2>
+              <a class="link-button" href="/api/blaster/template">Baixar modelo</a>
+            </div>
+            <label class="drop-field">
+              <input id="blaster-file" type="file" accept=".xlsx,.xls,.csv">
+              <strong>Selecionar planilha</strong>
+              <span id="blaster-file-label">Telefone na coluna A, nome na C para usar {nome}.</span>
+            </label>
+            <div class="button-row">
+              <button class="secondary-button" id="optimize-blaster-btn" disabled>Otimizar planilha</button>
+            </div>
+            <div class="table-wrap">
+              <table id="blaster-preview"></table>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Controle de envio</h2>
+              <span class="status-pill" id="blaster-status">Inativo</span>
+            </div>
+            <div class="form-grid three">
+              <label class="field">
+                <span>QR Code (segundos)</span>
+                <input id="qr-wait" type="number" min="10" value="60">
+              </label>
+              <label class="field">
+                <span>Intervalo min. (segundos)</span>
+                <input id="delay-min" type="number" min="3" value="10">
+              </label>
+              <label class="field">
+                <span>Intervalo max. (segundos)</span>
+                <input id="delay-max" type="number" min="3" value="20">
+              </label>
+            </div>
+            <div class="button-row">
+              <button class="primary-button" id="start-blaster-btn" disabled>Iniciar</button>
+              <button class="secondary-button" id="pause-blaster-btn" disabled>Pausar</button>
+              <button class="danger-button" id="stop-blaster-btn" disabled>Parar</button>
+            </div>
+            <div class="stats-grid">
+              <div><span>Total</span><strong id="stat-total">0</strong></div>
+              <div><span>Enviados</span><strong id="stat-sent">0</strong></div>
+              <div><span>Falhas</span><strong id="stat-failed">0</strong></div>
+              <div><span>Timer</span><strong id="stat-countdown">-</strong></div>
+            </div>
+            <div class="progress">
+              <div id="blaster-progress"></div>
+            </div>
+            <div class="current-target" id="current-target">Nenhum envio em andamento.</div>
+          </section>
+
+          <section class="panel logs-panel">
+            <div class="panel-head">
+              <h2>Log de envios</h2>
+              <button class="ghost-button small" id="clear-log-btn">Limpar</button>
+            </div>
+            <div class="log-box" id="blaster-log"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-selector">
+        <div class="module-grid selector-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Planilha IMOBIZI</h2>
+              <span id="property-count" class="muted">Nenhuma planilha</span>
+            </div>
+            <div class="property-source-row">
+              <span id="property-source" class="muted">Carregando planilha mais recente...</span>
+              <button class="ghost-button small" id="stop-property-sync-btn" type="button" hidden>Cancelar</button>
+              <button class="ghost-button small" id="reload-property-btn" type="button" title="Baixa os relatórios de Imóveis do Imobzi, unifica e recarrega a planilha.">Atualizar</button>
+            </div>
+            <div class="log-box" id="property-sync-log" hidden></div>
+            <div class="form-grid two">
+              <label class="field">
+                <span>Cliente</span>
+                <input id="client-name" type="text">
+              </label>
+              <label class="field">
+                <span>T&iacute;tulo</span>
+                <input id="report-title" type="text" value="Sele&ccedil;&atilde;o de im&oacute;veis">
+              </label>
+            </div>
+            <div class="form-grid three">
+              <label class="field">
+                <span>&Aacute;rea min.</span>
+                <input id="area-min" type="text">
+              </label>
+              <label class="field">
+                <span>&Aacute;rea max.</span>
+                <input id="area-max" type="text">
+              </label>
+              <label class="field">
+                <span>Regi&atilde;o/CEP</span>
+                <input id="region-or-cep" type="text">
+              </label>
+              <label class="field">
+                <span>Valor min.</span>
+                <input id="valor-min" type="text">
+              </label>
+              <label class="field">
+                <span>Valor max.</span>
+                <input id="valor-max" type="text">
+              </label>
+              <label class="field">
+                <span>Pre&ccedil;o</span>
+                <select id="price-mode">
+                  <option value="Automatico">Autom&aacute;tico</option>
+                  <option value="Venda">Venda</option>
+                  <option value="Locacao">Loca&ccedil;&atilde;o</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Tipo</span>
+                <select id="tipo-imovel">
+                  <option>Todos</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Limite</span>
+                <input id="max-results" type="number" min="1">
+              </label>
+              <label class="check-field">
+                <input id="only-active" type="checkbox">
+                <span>Somente ativos</span>
+              </label>
+            </div>
+            <label class="field">
+              <span>C&oacute;digos</span>
+              <textarea id="selected-codes" rows="4"></textarea>
+            </label>
+            <div class="button-row">
+              <button class="primary-button" id="search-properties-btn" disabled>Buscar im&oacute;veis</button>
+              <button class="secondary-button" id="export-json-btn" disabled>JSON</button>
+              <button class="secondary-button" id="export-pdf-btn" disabled>PDF</button>
+            </div>
+          </section>
+
+          <section class="panel result-panel">
+            <div class="panel-head">
+              <h2>Resultado</h2>
+              <span id="selector-result-count" class="muted">0 im&oacute;veis</span>
+            </div>
+            <div class="property-results" id="property-results"></div>
+            <div class="button-row">
+              <button class="primary-button" id="export-web-btn" disabled>Baixar apresenta&ccedil;&atilde;o web</button>
+            </div>
+          </section>
+
+          <section class="panel message-panel">
+            <div class="panel-head">
+              <h2>Texto comercial</h2>
+              <button class="ghost-button small" id="copy-marketing-btn">Copiar</button>
+            </div>
+            <textarea id="marketing-text" rows="18"></textarea>
+            <label class="field contact-quick-field">
+              <span>Contato do CRM</span>
+              <select class="contact-quick-select" id="marketing-contact-select">
+                <option value="">Selecionar contato...</option>
+              </select>
+            </label>
+            <div class="button-row">
+              <button class="secondary-button" id="use-message-btn">Usar no contato selecionado</button>
+            </div>
+          </section>
+
+          <section class="panel table-panel">
+            <div class="panel-head">
+              <h2>Planilha completa</h2>
+              <span id="property-table-count" class="muted">0 linha(s)</span>
+            </div>
+            <div class="table-wrap property-table-wrap">
+              <table id="property-table">
+                <thead>
+                  <tr id="property-table-head"></tr>
+                  <tr id="property-table-filters"></tr>
+                </thead>
+                <tbody id="property-table-body"></tbody>
+              </table>
+            </div>
+            <div class="button-row" id="property-table-more"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-selecao-externa">
+        <div class="module-grid external-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Planilha Vivareal</h2>
+              <span id="external-property-count" class="muted">Nenhuma planilha</span>
+            </div>
+            <div class="property-source-row">
+              <span id="external-property-source" class="muted">Carregando planilha mais recente...</span>
+              <button class="ghost-button small" id="stop-external-sync-btn" type="button" hidden>Cancelar</button>
+              <button class="ghost-button small" id="external-reload-btn" type="button" title="Baixa a planilha mais recente de 'Atualiza&ccedil;&atilde;o externa' e roda o scraper do Vivareal.">Atualizar</button>
+            </div>
+            <div class="log-box" id="external-sync-log" hidden></div>
+            <div class="form-grid two">
+              <label class="field">
+                <span>Cliente</span>
+                <input id="external-client-name" type="text">
+              </label>
+              <label class="field">
+                <span>T&iacute;tulo</span>
+                <input id="external-report-title" type="text" value="Sele&ccedil;&atilde;o de im&oacute;veis">
+              </label>
+            </div>
+            <div class="form-grid three">
+              <label class="field">
+                <span>&Aacute;rea min.</span>
+                <input id="external-area-min" type="text">
+              </label>
+              <label class="field">
+                <span>&Aacute;rea max.</span>
+                <input id="external-area-max" type="text">
+              </label>
+              <label class="field">
+                <span>Regi&atilde;o/CEP</span>
+                <input id="external-region-or-cep" type="text" placeholder="Ex.: guarulhos, vila sao pedro">
+              </label>
+              <label class="field">
+                <span>Valor min.</span>
+                <input id="external-valor-min" type="text">
+              </label>
+              <label class="field">
+                <span>Valor max.</span>
+                <input id="external-valor-max" type="text">
+              </label>
+              <label class="field">
+                <span>Pre&ccedil;o</span>
+                <select id="external-price-mode">
+                  <option value="Automatico">Autom&aacute;tico</option>
+                  <option value="Venda">Venda</option>
+                  <option value="Locacao">Loca&ccedil;&atilde;o</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Tipo</span>
+                <select id="external-tipo-imovel">
+                  <option>Todos</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Limite</span>
+                <input id="external-max-results" type="number" min="1">
+              </label>
+              <label class="check-field">
+                <input id="external-only-active" type="checkbox" checked>
+                <span>Somente ativos</span>
+              </label>
+            </div>
+            <label class="field">
+              <span>C&oacute;digos</span>
+              <textarea id="external-selected-codes" rows="4"></textarea>
+            </label>
+            <div class="button-row">
+              <button class="primary-button" id="external-search-btn" disabled>Buscar im&oacute;veis</button>
+              <button class="secondary-button" id="external-export-json-btn" disabled>JSON</button>
+              <button class="secondary-button" id="external-export-pdf-btn" disabled>PDF</button>
+            </div>
+          </section>
+
+          <section class="panel result-panel">
+            <div class="panel-head">
+              <h2>Resultado</h2>
+              <span id="external-result-count" class="muted">0 im&oacute;veis</span>
+            </div>
+            <div class="property-results" id="external-property-results"></div>
+            <div class="button-row">
+              <button class="primary-button" id="external-export-web-btn" disabled>Baixar apresenta&ccedil;&atilde;o web</button>
+            </div>
+          </section>
+
+          <section class="panel message-panel">
+            <div class="panel-head">
+              <h2>Texto comercial</h2>
+              <button class="ghost-button small" id="external-copy-marketing-btn">Copiar</button>
+            </div>
+            <textarea id="external-marketing-text" rows="18"></textarea>
+            <label class="field contact-quick-field">
+              <span>Contato do CRM</span>
+              <select class="contact-quick-select" id="external-marketing-contact-select">
+                <option value="">Selecionar contato...</option>
+              </select>
+            </label>
+            <div class="button-row">
+              <button class="secondary-button" id="external-use-message-btn">Usar no contato selecionado</button>
+            </div>
+          </section>
+
+          <section class="panel table-panel">
+            <div class="panel-head">
+              <h2>Planilha completa</h2>
+              <span id="external-property-table-count" class="muted">0 linha(s)</span>
+            </div>
+            <div class="table-wrap property-table-wrap">
+              <table id="external-property-table">
+                <thead>
+                  <tr id="external-property-table-head"></tr>
+                  <tr id="external-property-table-filters"></tr>
+                </thead>
+                <tbody id="external-property-table-body"></tbody>
+              </table>
+            </div>
+            <div class="button-row" id="external-property-table-more"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-apresentacoes">
+        <div class="toolbar">
+          <button class="ghost-button" id="refresh-presentations-btn" type="button">Atualizar lista</button>
+          <label class="field compact presentations-contact-field">
+            <span>Atribuir ao lead</span>
+            <select class="contact-quick-select" id="presentations-contact-select">
+              <option value="">Selecionar contato...</option>
+            </select>
+          </label>
+          <span class="muted">Escolha um contato e clique em "Atribuir ao lead" no arquivo desejado.</span>
+        </div>
+        <div class="presentations-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>INDEX</h2>
+              <span class="muted" id="presentations-index-count">0 arquivo(s)</span>
+            </div>
+            <div class="presentations-list" id="presentations-index-list"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h2>PDF</h2>
+              <span class="muted" id="presentations-pdf-count">0 arquivo(s)</span>
+            </div>
+            <div class="presentations-list" id="presentations-pdf-list"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <aside class="conversation-drawer" id="conversation-drawer">
+      <div class="drawer-empty" id="drawer-empty">
+        <strong>Nenhum contato selecionado</strong>
+        <span>Abra um card para ver notas e hist&oacute;rico.</span>
+        <button class="ghost-button small" id="hide-empty-drawer-btn">Fechar painel</button>
+      </div>
+      <div class="drawer-content" id="drawer-content" hidden>
+        <div class="drawer-head">
+          <div>
+            <h2 id="detail-title">Contato</h2>
+            <span id="detail-phone-label"></span>
+          </div>
+          <button class="ghost-button small" id="close-drawer-btn">Fechar</button>
+        </div>
+        <div class="form-grid two">
+          <label class="field">
+            <span>Nome</span>
+            <input id="detail-name" type="text">
+          </label>
+          <label class="field">
+            <span>Telefone</span>
+            <input id="detail-phone" type="text">
+          </label>
+          <label class="field">
+            <span>Tipo</span>
+            <select id="detail-kind">
+              <option>Cliente</option>
+              <option>Corretor</option>
+              <option>Proprietario</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Etapa</span>
+            <select id="detail-stage"></select>
+          </label>
+          <label class="field">
+            <span>Cor do card</span>
+            <select id="detail-color">
+              <option value="">Sem cor</option>
+              <option value="verde">Verde</option>
+              <option value="amarelo">Amarelo</option>
+              <option value="azul">Azul</option>
+              <option value="vermelho">Vermelho</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Data de cria&ccedil;&atilde;o</span>
+            <input id="detail-created-at" type="text" placeholder="2026-04-29 10:30:00">
+          </label>
+        </div>
+        <label class="field">
+          <span>Observa&ccedil;&otilde;es</span>
+          <textarea id="detail-notes" rows="3"></textarea>
+        </label>
+        <div class="button-row">
+          <button class="primary-button" id="save-contact-btn">Salvar</button>
+          <button class="secondary-button" id="clear-notes-btn">Excluir observa&ccedil;&otilde;es</button>
+          <button class="secondary-button" id="open-whatsapp-btn">WhatsApp</button>
+        </div>
+        <div class="message-list" id="message-list"></div>
+        <label class="field">
+          <span>Mensagem / nota</span>
+          <textarea id="message-body" rows="4"></textarea>
+        </label>
+        <div class="button-row">
+          <button class="secondary-button" data-add-message="note">Nota</button>
+          <button class="secondary-button" data-add-message="in">Recebida</button>
+          <button class="secondary-button" data-add-message="out">Enviada</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="modal" id="contact-modal" hidden>
+    <form class="modal-card" id="contact-form">
+      <div class="panel-head">
+        <h2>Novo contato</h2>
+        <button type="button" class="ghost-button small" id="close-contact-modal">Fechar</button>
+      </div>
+      <div class="form-grid two">
+        <label class="field">
+          <span>Nome</span>
+          <input name="name" type="text" required>
+        </label>
+        <label class="field">
+          <span>Telefone</span>
+          <input name="phone" type="text">
+        </label>
+        <label class="field">
+          <span>Tipo</span>
+          <select name="kind">
+            <option>Cliente</option>
+            <option>Corretor</option>
+            <option>Proprietario</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Etapa</span>
+          <select name="stage" id="new-contact-stage"></select>
+        </label>
+      </div>
+      <label class="field">
+        <span>Ultima mensagem</span>
+        <textarea name="last_message" rows="3"></textarea>
+      </label>
+      <div class="button-row end">
+        <button type="submit" class="primary-button">Criar contato</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="toast"></div>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

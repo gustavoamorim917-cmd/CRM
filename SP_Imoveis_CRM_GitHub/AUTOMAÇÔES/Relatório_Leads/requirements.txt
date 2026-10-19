@@ -1,0 +1,4 @@
+﻿selenium>=4.15
+webdriver-manager>=4.0
+python-dotenv>=1.0
+openpyxl>=3.1

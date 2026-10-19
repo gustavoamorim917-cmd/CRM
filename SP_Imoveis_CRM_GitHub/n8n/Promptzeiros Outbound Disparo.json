@@ -1,0 +1,722 @@
+{
+  "name": "Promptzeiros Outbound Disparo",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "c1621e60-5dac-4933-9ad3-22a177b8d307",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "COLE_AQUI_O_ID_DA_SUA_PLANILHA",
+          "mode": "list",
+          "cachedResultName": "Promptzeiros - Leads Disparo",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/COLE_AQUI_O_ID_DA_SUA_PLANILHA/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Página1"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "status",
+              "lookupValue": "pending"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f78ed98a-4194-4afa-89ec-ba6e6ccb3f57",
+      "name": "Read Leads from Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        224,
+        480
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $input.item.json;\nconst out = { ...lead, _ok: true, _erro: '', _mensagem: '', _delay_seg: 0, _template_usado: '' };\n\n// Boolean-safe checks\nconst consentRaw = lead.consentimento;\nconst consentOk = consentRaw === true || String(consentRaw).toUpperCase() === 'TRUE';\nif (!consentOk) {\n  out._ok = false;\n  out._erro = 'Sem consentimento (consentimento != TRUE)';\n  return out;\n}\nconst optOutRaw = lead.opt_out;\nconst optedOut = optOutRaw === true || String(optOutRaw).toUpperCase() === 'TRUE';\nif (optedOut) {\n  out._ok = false;\n  out._erro = 'Lead em opt-out';\n  return out;\n}\n\n// PRODUCAO: janela comercial 9-12 / 13-18 SP. Para teste manual, mude TEST_MODE = true.\nconst TEST_MODE = false;\nif (!TEST_MODE) {\n  const now = new Date();\n  const horaSP = parseInt(now.toLocaleString('pt-BR', {timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false}));\n  const dentroHorario = (horaSP >= 9 && horaSP < 12) || (horaSP >= 13 && horaSP < 18);\n  if (!dentroHorario) {\n    out._ok = false;\n    out._erro = `Fora do horario comercial (${horaSP}h SP). Permitido: 9h-12h ou 13h-18h.`;\n    return out;\n  }\n}\n\nconst now = new Date();\n\nconst templates = {\n  A: {\n    chars: 235,\n    body: `Oi {{nome}}, aqui é o Marcos da SP Imóveis. Vi que você demonstrou interesse em imóveis na zona norte. Posso te ajudar com avaliação gratuita ou busca direcionada. Qual seu objetivo agora?\\n\\nPra parar de receber, responda SAIR.`\n  },\n  B: {\n    chars: 305,\n    body: `{{nome}}, tudo bem? Aqui é a SP Imóveis. A gente trabalha na zona norte de SP há 6 anos com compra, venda e locação. Avaliação de imóvel é por nossa conta. Se tiver pensando em vender ou comprar nos próximos meses, me conta sua situação que te ajudo a entender as opções.\\n\\nNão quer mais? Manda SAIR.`\n  },\n  C: {\n    chars: 250,\n    body: `Olá {{nome}}! A gente da SP Imóveis tá fazendo uma rodada de avaliações gratuitas de imóveis na zona norte essa semana. Se você tiver interesse (comprar, vender ou alugar), me responde aqui que te explico em 1 minuto. Tudo bem?\\n\\nSAIR pra cancelar.`\n  }\n};\n\nconst alvo = (lead.template_alvo || '').toString().toUpperCase().trim();\nlet escolhido;\nif (['A', 'B', 'C'].includes(alvo)) {\n  escolhido = alvo;\n} else {\n  escolhido = ['A', 'B', 'C'][Math.floor(Math.random() * 3)];\n}\nout._template_usado = escolhido;\n\nconst tpl = templates[escolhido].body;\nlet msg = tpl\n  .replace(/\\{\\{nome\\}\\}/g, lead.nome || 'tudo bem')\n  .replace(/\\{\\{empresa\\}\\}/g, lead.empresa || '');\n\nconst banidas = ['promocao', 'desconto', 'ultima chance', 'gratis', 'urgente', 'corra', 'imperdivel'];\nconst msgNormalized = msg.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\nconst blocked = banidas.find(k => msgNormalized.includes(k));\nif (blocked) {\n  out._ok = false;\n  out._erro = `Template contem palavra banida: ${blocked}`;\n  return out;\n}\n\nif (/https?:\\/\\/|www\\./i.test(msg)) {\n  out._ok = false;\n  out._erro = 'Template contem link (proibido em 1a mensagem)';\n  return out;\n}\n\nif (msg.length < 80 || msg.length > 600) {\n  out._ok = false;\n  out._erro = `Tamanho fora do range 80-600 chars: ${msg.length}`;\n  return out;\n}\n\nconst tel = (lead.telefone || '').toString().replace(/\\D/g, '');\nif (tel.length < 12 || tel.length > 13) {\n  out._ok = false;\n  out._erro = `Telefone invalido: ${lead.telefone}`;\n  return out;\n}\n\nout._delay_seg = Math.floor(Math.random() * 75) + 15 + Math.random();\nout._delay_seg = Math.round(out._delay_seg * 10) / 10;\n\nout._mensagem = msg;\nout._telefone_normalizado = tel;\nout.now_iso = now.toISOString();\n\nreturn out;\n"
+      },
+      "id": "93d88d72-0b72-4e30-9941-8c03f30d6d08",
+      "name": "Validacoes + Template + Delay",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a2f84251-dfa5-4176-896c-867f53ab3b82",
+              "leftValue": "={{ $json._ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "69e2a055-8c59-44a7-bef7-2df0997c59b4",
+      "name": "Valido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        896,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://SEU-SERVIDOR-EVOLUTION-API/chat/whatsappNumbers/SUA-INSTANCIA",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"numbers\": [$json._telefone_normalizado] } }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "d6f9aaaa-cf71-4fa0-950e-93b67ce013a7",
+      "name": "Checar WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1120,
+        80
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Evolution Promptzeiros API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d67d0a46-db19-4dff-8679-167a9c18f09b",
+              "leftValue": "={{ $json.exists }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "953da455-78ab-4824-85e8-58cbbbf27401",
+      "name": "Tem WhatsApp?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1344,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "amount": "={{ $(\"Validacoes + Template + Delay\").item.json._delay_seg }}"
+      },
+      "id": "35c8b912-9e17-441f-bb6f-4bcc1d3c5674",
+      "name": "Wait (delay aleatorio)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1568,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://SEU-SERVIDOR-EVOLUTION-API/chat/sendPresence/SUA-INSTANCIA",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"number\": $('Validacoes + Template + Delay').item.json._telefone_normalizado, \"presence\": \"composing\", \"delay\": 4500 } }}",
+        "options": {
+          "timeout": 8000
+        }
+      },
+      "id": "7307d877-b670-4396-a1d5-e9b4bbcddd17",
+      "name": "Mostrar Digitando",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1792,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Evolution Promptzeiros API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": "={{ Math.floor(Math.random()*4) + 3 }}"
+      },
+      "id": "2c6e9edc-1ffd-4cfd-9399-2f1fa054baba",
+      "name": "Wait (typing 3-7s)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2016,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://SEU-SERVIDOR-EVOLUTION-API/message/sendText/SUA-INSTANCIA",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"number\": $('Validacoes + Template + Delay').item.json._telefone_normalizado, \"text\": $('Validacoes + Template + Delay').item.json._mensagem, \"delay\": 1200 } }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "f781d189-2dca-404a-96c1-77046e4a5915",
+      "name": "Enviar Mensagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2240,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Evolution Promptzeiros API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9a68441c-18ca-4ccc-9599-d8eb4035dc99",
+              "leftValue": "={{ $json.key.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2e986515-bd53-4723-9b77-5654558371e0",
+      "name": "Enviado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2464,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "COLE_AQUI_O_ID_DA_SUA_PLANILHA",
+          "mode": "list",
+          "cachedResultName": "Promptzeiros - Leads Disparo",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/COLE_AQUI_O_ID_DA_SUA_PLANILHA/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Página1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $(\"Loop por Lead\").item.json.id }}",
+            "status": "sent",
+            "ultima_data_envio": "={{ $now.toISO() }}",
+            "ultima_msg_id": "={{ $json.key.id }}",
+            "template_usado": "={{ $(\"Validacoes + Template + Delay\").item.json._template_usado }}",
+            "tentativas": "={{ ($(\"Loop por Lead\").item.json.tentativas || 0) + 1 }}",
+            "erro": ""
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": true,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string"
+            },
+            {
+              "id": "ultima_data_envio",
+              "displayName": "ultima_data_envio",
+              "type": "string"
+            },
+            {
+              "id": "ultima_msg_id",
+              "displayName": "ultima_msg_id",
+              "type": "string"
+            },
+            {
+              "id": "template_usado",
+              "displayName": "template_usado",
+              "type": "string"
+            },
+            {
+              "id": "tentativas",
+              "displayName": "tentativas",
+              "type": "number"
+            },
+            {
+              "id": "erro",
+              "displayName": "erro",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "711a4e08-046b-45a7-a00b-a802cb438f01",
+      "name": "Marcar Enviado",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2688,
+        80
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "9bc0d6d8-e3f1-49a1-bc2a-3b6d6c295f3e",
+      "name": "Loop por Lead",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        448,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "COLE_AQUI_O_ID_DA_SUA_PLANILHA",
+          "mode": "list",
+          "cachedResultName": "Promptzeiros - Leads Disparo",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/COLE_AQUI_O_ID_DA_SUA_PLANILHA/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Página1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $(\"Loop por Lead\").item.json.id }}",
+            "status": "failed",
+            "tentativas": "={{ ($(\"Loop por Lead\").item.json.tentativas || 0) + 1 }}",
+            "erro": "={{ $json._erro || $json.error?.message || \"Falha no envio\" }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": true,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string"
+            },
+            {
+              "id": "tentativas",
+              "displayName": "tentativas",
+              "type": "number"
+            },
+            {
+              "id": "erro",
+              "displayName": "erro",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ec3fe4a7-2065-47e5-beaa-fdd1b3193157",
+      "name": "Marcar Falhou",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2688,
+        288
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "COLE_AQUI_O_ID_DA_SUA_PLANILHA",
+          "mode": "list",
+          "cachedResultName": "Promptzeiros - Leads Disparo",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/COLE_AQUI_O_ID_DA_SUA_PLANILHA/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Página1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $(\"Loop por Lead\").item.json.id }}",
+            "status": "skipped",
+            "tentativas": "={{ ($(\"Loop por Lead\").item.json.tentativas || 0) + 1 }}",
+            "erro": "={{ $json._erro || \"Validacao bloqueou envio\" }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": true,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "type": "string"
+            },
+            {
+              "id": "tentativas",
+              "displayName": "tentativas",
+              "type": "number"
+            },
+            {
+              "id": "erro",
+              "displayName": "erro",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6eb06263-a2c7-4493-8d04-1269f201679c",
+      "name": "Marcar Skipped",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1120,
+        272
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Leads from Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads from Sheets": {
+      "main": [
+        [
+          {
+            "node": "Loop por Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validacoes + Template + Delay": {
+      "main": [
+        [
+          {
+            "node": "Valido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valido?": {
+      "main": [
+        [
+          {
+            "node": "Checar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Tem WhatsApp?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem WhatsApp?": {
+      "main": [
+        [
+          {
+            "node": "Wait (delay aleatorio)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar Falhou",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait (delay aleatorio)": {
+      "main": [
+        [
+          {
+            "node": "Mostrar Digitando",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mostrar Digitando": {
+      "main": [
+        [
+          {
+            "node": "Wait (typing 3-7s)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait (typing 3-7s)": {
+      "main": [
+        [
+          {
+            "node": "Enviar Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Enviado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviado?": {
+      "main": [
+        [
+          {
+            "node": "Marcar Enviado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar Falhou",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar Enviado": {
+      "main": [
+        [
+          {
+            "node": "Loop por Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop por Lead": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Validacoes + Template + Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar Falhou": {
+      "main": [
+        [
+          {
+            "node": "Loop por Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar Skipped": {
+      "main": [
+        [
+          {
+            "node": "Loop por Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": []
+}

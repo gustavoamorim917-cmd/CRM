@@ -1,0 +1,456 @@
+{
+  "name": "Promptzeiros CRM Seletor Disparo Integrado",
+  "nodes": [
+    {
+      "id": "eb555dd8-5394-4f3f-a385-672be8e9fc9b",
+      "name": "Webhook CRM Lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        260
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm-lead-automation",
+        "options": {}
+      }
+    },
+    {
+      "id": "8ca2f3fb-eeea-4481-bba1-e44ac699ea55",
+      "name": "Normalizar Evento CRM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        260
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const source = $json.body || $json;\nconst leadId = source.lead_id || source.conversation_id || source.id || source.query?.lead_id;\nif (!leadId) throw new Error('lead_id ausente no payload do CRM');\nconst baseUrl = String($env.CRM_APP_BASE_URL || 'http://127.0.0.1:5003').replace(/\\/$/, '');\nreturn {\n  event: source.event || 'lead_updated',\n  lead_id: String(leadId),\n  app_base_url: baseUrl,\n  integration_token: $env.CRM_INTEGRATION_TOKEN || '',\n  auto_start_blaster: String($env.CRM_AUTO_START_BLASTER || 'false').toLowerCase() === 'true',\n  max_results: Number($env.CRM_MAX_RESULTS || 5),\n  raw_event: source\n};"
+      }
+    },
+    {
+      "id": "38ea3353-9cef-4ec7-956a-1c0220302141",
+      "name": "Buscar Lead + Notas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        520,
+        260
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.app_base_url + '/api/integration/leads/' + $json.lead_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Integration-Token",
+              "value": "={{ $json.integration_token }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      }
+    },
+    {
+      "id": "91e79c3e-77b3-41e8-9d91-8852c1b7ea39",
+      "name": "Ja Processado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        780,
+        120
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "already-processed",
+              "leftValue": "={{ $json.already_processed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "3b3ddf6a-db4a-4665-af39-c5ea91868b4d",
+      "name": "Log Duplicado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1040,
+        20
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Normalizar Evento CRM').item.json.app_base_url + '/api/integration/leads/' + $('Normalizar Evento CRM').item.json.lead_id + '/automation-log' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Integration-Token",
+              "value": "={{ $('Normalizar Evento CRM').item.json.integration_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { event: 'duplicado_bloqueado', demand_hash: $json.extraction?.demand_hash || '', message: 'N8N ignorou: demanda ja processada para este lead.' } }}",
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "674d7251-2346-4e99-8ecb-35dfb0ccd889",
+      "name": "Demanda Encontrada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1040,
+        260
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-demand",
+              "leftValue": "={{ ($json.extraction?.score || 0) > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "58ddd0c2-3415-4e86-9b39-48b2b2366074",
+      "name": "Log Sem Demanda",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1300,
+        420
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Normalizar Evento CRM').item.json.app_base_url + '/api/integration/leads/' + $('Normalizar Evento CRM').item.json.lead_id + '/automation-log' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Integration-Token",
+              "value": "={{ $('Normalizar Evento CRM').item.json.integration_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { event: 'sem_demanda', message: 'Nenhum criterio de valor, metragem ou regiao encontrado nas notas do lead.', note: 'Automacao N8N: nenhum criterio encontrado nas notas para iniciar busca.' } }}",
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "c6f43f98-de65-4c44-9f54-38e510bdd4ee",
+      "name": "Acionar Seletor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1300,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Normalizar Evento CRM').item.json.app_base_url + '/api/integration/selector/search' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Integration-Token",
+              "value": "={{ $('Normalizar Evento CRM').item.json.integration_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { lead_id: $('Normalizar Evento CRM').item.json.lead_id, demanda: $json.extraction.demanda, demand_hash: $json.extraction.demand_hash, max_results: $('Normalizar Evento CRM').item.json.max_results, only_active: true } }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "3b5784f2-e6dc-4bd4-bfcf-0cad8b24b952",
+      "name": "Encontrou Opcoes?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1560,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-options",
+              "leftValue": "={{ ($json.count || 0) > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c4979c5c-f85b-4630-9f7c-eddea027fca8",
+      "name": "Montar Mensagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1820,
+        100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Normalizar Evento CRM').item.json.app_base_url + '/api/integration/disparo/montar' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Integration-Token",
+              "value": "={{ $('Normalizar Evento CRM').item.json.integration_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { lead_id: $('Normalizar Evento CRM').item.json.lead_id, lead: { lead_id: $('Normalizar Evento CRM').item.json.lead_id, nome: $('Buscar Lead + Notas').item.json.nome, telefone: $('Buscar Lead + Notas').item.json.telefone }, demanda: $('Buscar Lead + Notas').item.json.extraction.demanda, demand_hash: $('Buscar Lead + Notas').item.json.extraction.demand_hash, selector: $json } }}",
+        "options": {
+          "timeout": 15000
+        }
+      }
+    },
+    {
+      "id": "5564cff6-8df5-44e6-b170-03516f2bf2e5",
+      "name": "Preparar Disparo no App",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2080,
+        100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Normalizar Evento CRM').item.json.app_base_url + '/api/integration/disparo/preparar' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Integration-Token",
+              "value": "={{ $('Normalizar Evento CRM').item.json.integration_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { disparo: $json.disparo, auto_start: $('Normalizar Evento CRM').item.json.auto_start_blaster, qr_wait: Number($env.CRM_BLASTER_QR_WAIT || 60), delay_min: Number($env.CRM_BLASTER_DELAY_MIN || 10), delay_max: Number($env.CRM_BLASTER_DELAY_MAX || 20) } }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "96df46e8-e3b8-4b7a-99cc-f06aba150034",
+      "name": "Registrar Sem Opcoes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1820,
+        320
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Normalizar Evento CRM').item.json.app_base_url + '/api/integration/leads/' + $('Normalizar Evento CRM').item.json.lead_id + '/automation-result' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Integration-Token",
+              "value": "={{ $('Normalizar Evento CRM').item.json.integration_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { status: 'sem_opcoes', demand_hash: $('Buscar Lead + Notas').item.json.extraction.demand_hash, error: 'Busca executada, mas nenhuma opcao compativel foi encontrada.' } }}",
+        "options": {
+          "timeout": 15000
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook CRM Lead": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Evento CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Evento CRM": {
+      "main": [
+        [
+          {
+            "node": "Buscar Lead + Notas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Lead + Notas": {
+      "main": [
+        [
+          {
+            "node": "Ja Processado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ja Processado?": {
+      "main": [
+        [
+          {
+            "node": "Log Duplicado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Demanda Encontrada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demanda Encontrada?": {
+      "main": [
+        [
+          {
+            "node": "Acionar Seletor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Sem Demanda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acionar Seletor": {
+      "main": [
+        [
+          {
+            "node": "Encontrou Opcoes?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Encontrou Opcoes?": {
+      "main": [
+        [
+          {
+            "node": "Montar Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar Sem Opcoes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Preparar Disparo no App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "description": "Integra CRM local Flask com extracao de demanda, seletor de imoveis e disparador do app."
+  },
+  "tags": []
+}

@@ -1,0 +1,206 @@
+PROMPT PARA GERAÇÃO DE DIAGRAMA DE BANCO DE DADOS
+Projeto: SP_Imoveis_CRM (CRM imobiliário integrado a WhatsApp e N8N)
+=====================================================================
+
+CONTEXTO
+--------
+Você é um(a) engenheiro(a) de software especialista em modelagem de dados e
+notação entidade-relacionamento (ER). Preciso que você produza um DIAGRAMA DE
+BANCO DE DADOS (Modelo Entidade-Relacionamento / DER) completo para o
+"SP_Imoveis_CRM", um CRM imobiliário local (Flask + SQLite) que:
+
+- Organiza contatos em um funil Kanban (colunas/estágios como Ativo,
+  Negociando, Fechado, Corretores, Proprietários).
+- Guarda histórico de conversas e notas internas por contato.
+- Abre o WhatsApp Web para contato manual e possui um disparador de
+  mensagens em massa.
+- Usa um "seletor de imóveis" alimentado por planilhas exportadas do
+  sistema IMOBIZI (hoje os imóveis NÃO estão em tabela relacional, apenas em
+  arquivos .xlsx importados).
+- Está integrado ao N8N: o CRM envia demandas de disparo/seleção de imóveis
+  para workflows do N8N e recebe de volta o resultado (status, payloads
+  JSON), registrando cada execução e evento.
+
+O banco de dados ATUAL (SQLite, ainda não normalizado) já contém estas
+tabelas — use-as como ponto de partida real, não invente do zero:
+
+  conversations(id PK, name, phone, stage, kind, source, owner,
+                last_message, notes, property_codes, created_at, updated_at)
+  messages(id PK, conversation_id FK->conversations.id, direction, body,
+           created_at)
+  stages(id PK TEXT, label, position, created_at)
+  automation_runs(id PK, conversation_id FK->conversations.id, demand_hash,
+                  status, demand_json, selector_json, dispatch_json,
+                  message, error, created_at, updated_at, sent_at,
+                  UNIQUE(conversation_id, demand_hash))
+  automation_logs(id PK, conversation_id FK->conversations.id NULLABLE,
+                  demand_hash, event, message, payload_json, created_at)
+
+Observações do estado atual que precisam ser corrigidas/evoluídas no novo
+modelo:
+  - "kind" mistura Cliente/Proprietário/Corretor dentro da mesma tabela de
+    conversas (não normalizado).
+  - "owner" e "property_codes" são campos de texto livre (deveriam virar
+    chaves estrangeiras e uma tabela associativa N:N).
+  - Não existe tabela de imóveis nem de proprietários — hoje vêm de planilha.
+  - Não existe controle de propostas, visitas, contratos ou comissões.
+
+OBJETIVO
+--------
+Gere um diagrama ER completo e NORMALIZADO (até a 3ª Forma Normal, exceto
+onde eu explicitar desnormalização proposital) que:
+  1. Preserve a compatibilidade conceitual com as tabelas atuais (mostre a
+     evolução: de onde vem cada tabela nova).
+  2. Cubra todo o domínio de um CRM imobiliário maduro, incluindo os módulos
+     abaixo.
+  3. Represente entidades, atributos, tipos de dado, chaves primárias (PK),
+     chaves estrangeiras (FK), restrições (UNIQUE, NOT NULL, DEFAULT,
+     ENUM/CHECK) e cardinalidades (1:1, 1:N, N:N) de forma explícita.
+
+ESCOPO DE ENTIDADES A MODELAR
+------------------------------
+1. usuarios (corretores/administradores)
+   - id PK, nome, email UNIQUE, telefone, papel (admin|corretor), ativo
+     BOOLEAN, created_at
+
+2. contatos (substitui a mistura de "kind" dentro de conversations)
+   - id PK, nome, telefone UNIQUE, email, tipo_contato
+     (cliente|proprietario|corretor|fornecedor), origem/fonte
+     (site|indicacao|portal|instagram|whatsapp|outro), created_at
+
+3. proprietarios (especialização de contatos, 1:1 com contatos onde
+   tipo_contato = proprietario)
+   - id PK, contato_id FK->contatos.id UNIQUE, documento (CPF/CNPJ),
+     observacoes
+
+4. imoveis (hoje só existe em planilha; propor tabela relacional)
+   - id PK, codigo_imobizi UNIQUE, proprietario_id FK->proprietarios.id,
+     tipo (apartamento|casa|terreno|comercial|rural), finalidade
+     (venda|locacao), endereco, bairro, cidade, uf, cep, area_util,
+     area_total, quartos, banheiros, vagas_garagem, valor DECIMAL,
+     status (disponivel|reservado|vendido|alugado|inativo), descricao,
+     corretor_responsavel_id FK->usuarios.id, created_at, updated_at
+
+5. imovel_fotos
+   - id PK, imovel_id FK->imoveis.id, url, ordem
+
+6. funil_estagios (evolução de "stages")
+   - id PK, nome, ordem, cor, created_at
+
+7. conversas (evolução de "conversations", agora referenciando contatos)
+   - id PK, contato_id FK->contatos.id, estagio_id FK->funil_estagios.id,
+     corretor_responsavel_id FK->usuarios.id (substitui "owner" texto),
+     ultima_mensagem, notas, created_at, updated_at
+
+8. conversa_imoveis (tabela associativa N:N — substitui "property_codes"
+   texto livre)
+   - conversa_id FK->conversas.id, imovel_id FK->imoveis.id,
+     PK composta (conversa_id, imovel_id)
+
+9. mensagens (evolução de "messages")
+   - id PK, conversa_id FK->conversas.id, direcao
+     (entrada|saida|nota_interna), canal (whatsapp|email|interno), corpo,
+     created_at
+
+10. visitas
+    - id PK, imovel_id FK->imoveis.id, contato_id FK->contatos.id,
+      corretor_id FK->usuarios.id, data_hora, status
+      (agendada|realizada|cancelada), feedback, created_at
+
+11. propostas
+    - id PK, imovel_id FK->imoveis.id, contato_id FK->contatos.id
+      (proponente), corretor_id FK->usuarios.id, valor_proposto DECIMAL,
+      condicoes, status (pendente|aceita|recusada|contraproposta),
+      created_at, updated_at
+
+12. contratos
+    - id PK, proposta_id FK->propostas.id, imovel_id FK->imoveis.id, tipo
+      (venda|locacao), valor_final DECIMAL, data_assinatura, status
+      (vigente|encerrado|cancelado), documento_url, created_at
+
+13. comissoes
+    - id PK, contrato_id FK->contratos.id, corretor_id FK->usuarios.id,
+      percentual DECIMAL, valor DECIMAL, status_pagamento
+      (pendente|pago|cancelado), data_pagamento
+
+14. tarefas (lembretes/atividades)
+    - id PK, conversa_id FK->conversas.id NULLABLE, corretor_id
+      FK->usuarios.id, titulo, descricao, data_vencimento, status
+      (pendente|concluida|atrasada), created_at
+
+15. tags e conversa_tags (N:N)
+    - tags(id PK, nome UNIQUE)
+    - conversa_tags(conversa_id FK->conversas.id, tag_id FK->tags.id, PK
+      composta)
+
+16. automation_runs (mantém como está, referenciando conversas)
+    - id PK, conversa_id FK->conversas.id, demand_hash, status, demand_json,
+      selector_json, dispatch_json, message, error, created_at, updated_at,
+      sent_at, UNIQUE(conversa_id, demand_hash)
+
+17. automation_logs (mantém como está)
+    - id PK, conversa_id FK->conversas.id NULLABLE, demand_hash, event,
+      message, payload_json, created_at
+
+RELACIONAMENTOS-CHAVE A REPRESENTAR
+------------------------------------
+- usuarios (1) ---- (N) imoveis            [corretor responsável]
+- proprietarios (1) ---- (N) imoveis
+- contatos (1) ---- (1) proprietarios      [especialização opcional]
+- contatos (1) ---- (N) conversas
+- funil_estagios (1) ---- (N) conversas
+- usuarios (1) ---- (N) conversas          [corretor responsável]
+- conversas (N) ---- (N) imoveis           via conversa_imoveis
+- conversas (1) ---- (N) mensagens
+- conversas (1) ---- (N) automation_runs
+- conversas (1) ---- (N) automation_logs
+- conversas (N) ---- (N) tags              via conversa_tags
+- imoveis (1) ---- (N) imovel_fotos
+- imoveis (1) ---- (N) visitas
+- imoveis (1) ---- (N) propostas
+- propostas (1) ---- (1) contratos         [uma proposta aceita gera 1 contrato]
+- contratos (1) ---- (N) comissoes
+- usuarios (1) ---- (N) comissoes
+- usuarios (1) ---- (N) tarefas
+- conversas (1) ---- (N) tarefas (opcional)
+
+REQUISITOS TÉCNICOS DO DIAGRAMA
+--------------------------------
+1. Notação: diagrama ER estilo "crow's foot" (pé de galinha) OU sintaxe
+   Mermaid `erDiagram` — prefira Mermaid para que o diagrama possa ser
+   renderizado como código-texto e versionado no repositório.
+2. Agrupe visualmente as entidades por domínio/cor:
+   - Pessoas (usuarios, contatos, proprietarios)
+   - Imóveis (imoveis, imovel_fotos)
+   - Funil/CRM (funil_estagios, conversas, mensagens, tags, conversa_tags,
+     conversa_imoveis, tarefas)
+   - Negociação (visitas, propostas, contratos, comissoes)
+   - Integração N8N (automation_runs, automation_logs)
+3. Indique claramente PK (chave primária), FK (chave estrangeira) e campos
+   UNIQUE.
+4. Indique o tipo de dado de cada atributo (INTEGER, TEXT, DECIMAL(10,2),
+   DATETIME, BOOLEAN, ENUM/CHECK).
+5. Indique a cardinalidade de cada relacionamento (1:1, 1:N, N:N) com as
+   notações mínimo/máximo quando possível (0..1, 1..1, 0..N, 1..N).
+6. Use nomes de tabelas/colunas em snake_case, mantendo o idioma já usado no
+   banco atual (inglês para nomes técnicos legados como automation_runs;
+   pode usar português para as tabelas novas, mas seja consistente).
+7. Adicione uma legenda explicando convenções usadas (cores, símbolos de
+   cardinalidade, campos obrigatórios vs. opcionais).
+8. Ao final, inclua uma breve lista de "migrações sugeridas" descrevendo o
+   caminho de evolução do schema atual (SQLite simples) para o schema
+   normalizado proposto (ex.: "criar tabela contatos e migrar
+   name/phone/kind/owner de conversations", "criar tabela imoveis a partir
+   das planilhas do IMOBIZI e popular codigo_imobizi").
+
+FORMATO DE ENTREGA ESPERADO
+----------------------------
+1. Um bloco de código Mermaid (```mermaid erDiagram ... ```) pronto para ser
+   colado em um arquivo .md ou em uma ferramenta de renderização.
+2. Um resumo textual curto (bullet points) das principais decisões de
+   modelagem e trade-offs (ex.: por que separar contatos de conversas, por
+   que imoveis vira tabela própria em vez de continuar em planilha).
+3. Se possível, também gerar a versão equivalente em DBML
+   (https://dbml.dbdiagram.io/) para importação direta no dbdiagram.io.
+
+Gere o diagrama completo agora, seguindo todas as especificações acima.

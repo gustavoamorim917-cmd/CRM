@@ -1,0 +1,12 @@
+Versao: 20260505-dados-persistentes-v1
+
+Atualizacoes principais:
+- Sessao Disparos permite escolher qualquer coluna do CRM antes de carregar contatos.
+- Colunas auxiliares como Nome e Etapa nao entram mais no texto disparado.
+- Modelo de planilha usa Nome na coluna C para preencher {nome}.
+- INICIAR_APP.ps1 evita abrir servidor antigo e cria backup do banco antes de iniciar.
+- INICIAR_APP.ps1 agora valida o Selenium completo antes de abrir o app.
+- CRM aceita CRM_DATA_DIR para guardar banco/uploads fora da pasta do codigo.
+- Novo BACKUP_DADOS_CRM.ps1 gera backup zipado do banco, uploads e .env.
+- Novo ATUALIZAR_SEM_PERDER_DADOS.ps1 atualiza codigo sem sobrescrever data nem .env.
+- Workflow/documentacao N8N mantem credenciais fora do pacote e usa variaveis de ambiente.

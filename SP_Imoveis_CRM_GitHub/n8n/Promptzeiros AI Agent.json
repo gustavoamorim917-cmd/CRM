@@ -1,0 +1,441 @@
+{
+  "name": "Promptzeiros AI Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "promptzeiros-inbound",
+        "options": {}
+      },
+      "id": "e4aff5fd-7d60-4ac7-b823-c95ca01c2107",
+      "name": "Webhook Evolution Inbound",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-fromMe",
+              "leftValue": "={{ $json.body.data.key.fromMe }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "cond-notGroup",
+              "leftValue": "={{ $json.body.data.key.remoteJid }}",
+              "rightValue": "@g.us",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            },
+            {
+              "id": "cond-notBroadcast",
+              "leftValue": "={{ $json.body.data.key.remoteJid }}",
+              "rightValue": "@broadcast",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            },
+            {
+              "id": "cond-notNewsletter",
+              "leftValue": "={{ $json.body.data.key.remoteJid }}",
+              "rightValue": "@newsletter",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6f1f2fd4-1760-4323-a370-ccd6ffc7d858",
+      "name": "Filtrar Mensagem Pessoal",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "user-msg",
+              "name": "user_message",
+              "type": "string",
+              "value": "={{ $json.body.data.message.conversation }}"
+            },
+            {
+              "id": "session",
+              "name": "session_id",
+              "type": "string",
+              "value": "={{ $json.body.data.key.remoteJid.split('@')[0] }}"
+            },
+            {
+              "id": "system-prompt",
+              "name": "system_prompt",
+              "type": "string",
+              "value": "<contexto>Você é Marcos, atendente virtual da SP Imóveis na Zona Norte de São Paulo. Qualifica leads via WhatsApp pela metodologia BANT.</contexto>\n<instrucao>Conduza a conversa para descobrir 4 dados na ordem exata: 1) Intenção (comprar, vender ou alugar?) 2) Região (bairro de interesse na ZN-SP?) 3) Faixa (orçamento aproximado?) 4) Urgência (30 dias, 90 dias ou explorando?). Faça UMA pergunta por vez. Aguarde resposta antes da próxima. Tom acolhedor e profissional, máximo 2 linhas, use a gente.</instrucao>\n<formato_obrigatorio>Use português brasileiro CORRETO com acentos e cedilhas. SEM ASTERISCO, SEM MARKDOWN, SEM EMOJI, SEM HASHTAG. Use texto puro do WhatsApp. Saudação primeira mensagem: Olá! Aqui é o Marcos da SP Imóveis. Pra te ajudar melhor, você está querendo comprar, vender ou alugar? Após coletar os 4 dados, finalize em DUAS linhas separadas por quebra de linha. Linha 1 amigável: Perfeito! Vou alocar um corretor especializado pra você, em instantes ele entra em contato. Linha 2 marker técnico: TRIAGEM_COMPLETA{\"intencao\":\"X\",\"regiao\":\"Y\",\"faixa\":\"Z\",\"urgencia\":\"W\"} (atenção: dentro do JSON do marker use chaves SEM acento para garantir parse, mas pode usar valores em PT-BR normal).</formato_obrigatorio>\n<exemplos><example>User: oi | Agent: Olá! Aqui é o Marcos da SP Imóveis. Pra te ajudar melhor, você está querendo comprar, vender ou alugar? | User: comprar | Agent: Ótimo! Em qual bairro da Zona Norte tem interesse? | User: Santana | Agent: Excelente região. Qual sua faixa de orçamento? | User: até 800 mil | Agent: Anotado. E a urgência: imediato 30d, curto 90d ou ainda explorando? | User: imediato | Agent: Perfeito! Vou alocar um corretor especializado pra você, em instantes ele entra em contato.\\nTRIAGEM_COMPLETA{\"intencao\":\"comprar\",\"regiao\":\"Santana\",\"faixa\":\"800k\",\"urgencia\":\"30d\"}</example></exemplos>\n<constraints>Se perguntarem preço específico ou condição de crédito: Apenas um corretor autorizado pode confirmar esse valor, vou anotar e ele te informa. NUNCA inventar valor de imóvel. NUNCA prometer aprovação de crédito ou desconto. NUNCA pular pergunta da triagem. Se SAIR PARAR ou CANCELAR: Ok, removemos seu número da nossa lista. Até mais! Se pedir falar com humano ou reclamar: Vou te conectar com um corretor agora, ele assume daqui. Sempre PT-BR com acentuação correta.</constraints>\n\n"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "39b35f61-227c-4bea-8da3-ec9914bdd979",
+      "name": "Extract Message Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        448,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "or",
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "opt-sair",
+              "leftValue": "={{ $json.user_message }}",
+              "rightValue": "SAIR",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "opt-parar",
+              "leftValue": "={{ $json.user_message }}",
+              "rightValue": "PARAR",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "opt-cancelar",
+              "leftValue": "={{ $json.user_message }}",
+              "rightValue": "CANCELAR",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bcd6b61d-3623-4d3f-9c8a-70c4cd018915",
+      "name": "Detectar Opt-Out",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        672,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "optout-out",
+              "name": "output",
+              "type": "string",
+              "value": "Ok, removemos seu número da nossa lista. Até mais!"
+            },
+            {
+              "id": "optout-flag",
+              "name": "opt_out_event",
+              "type": "boolean",
+              "value": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "93810a95-f081-4e5a-bbeb-f5cc39837365",
+      "name": "Resposta Opt-Out",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1248,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://SEU-SERVIDOR-EVOLUTION-API/message/sendText/SUA-INSTANCIA",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"number\": $(\"Extract Message Data\").item.json.session_id, \"text\": $json.output } }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "573acc4f-8de8-4fd2-8fd0-f4071c0d14ef",
+      "name": "Send via Evolution API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1472,
+        128
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Evolution Promptzeiros API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Extract Message Data').item.json.user_message }}",
+        "options": {
+          "systemMessage": "={{ $('Extract Message Data').item.json.system_prompt }}",
+          "maxIterations": 5
+        }
+      },
+      "id": "878b2a9e-3df9-4824-8d1e-e59cefa30265",
+      "name": "Promptzeiros AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        896,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "builtInTools": {},
+        "options": {
+          "maxTokens": 1024,
+          "temperature": 0.7
+        }
+      },
+      "id": "5908f901-5820-474c-b9a0-79474f8b3271",
+      "name": "OpenAI GPT-4o-mini",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        912,
+        480
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Extract Message Data').item.json.session_id + '_v1' }}",
+        "contextWindowLength": 20
+      },
+      "id": "62428a03-6aa6-4778-9913-2210f0df4ca5",
+      "name": "Simple Memory (Demo)",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        1072,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const aiOutput = $input.item.json.output || $input.item.json.text || '';\nconst markerRegex = /TRIAGEM_COMPLETA\\{[^}]*\\}/;\nconst match = aiOutput.match(markerRegex);\n\nif (match) {\n  const cleanMessage = aiOutput.replace(markerRegex, '').trim();\n  let triagemData = {};\n  try {\n    const jsonStr = match[0].replace('TRIAGEM_COMPLETA', '');\n    triagemData = JSON.parse(jsonStr);\n  } catch (e) {\n    triagemData = { parse_error: e.message };\n  }\n  return {\n    output: cleanMessage,\n    triagem_complete: true,\n    triagem_data: triagemData,\n    raw_ai_output: aiOutput\n  };\n}\n\nreturn {\n  output: aiOutput,\n  triagem_complete: false,\n  raw_ai_output: aiOutput\n};"
+      },
+      "id": "cd86deb0-c680-4755-ad0e-316fb8917aa3",
+      "name": "Sanitize Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": []
+        },
+        "options": {}
+      },
+      "id": "7d246c28-e229-4ba7-9ab8-cdfb2cf7fc17",
+      "name": "Skip Bot Echo",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        448,
+        320
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Evolution Inbound": {
+      "main": [
+        [
+          {
+            "node": "Filtrar Mensagem Pessoal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar Mensagem Pessoal": {
+      "main": [
+        [
+          {
+            "node": "Extract Message Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Bot Echo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message Data": {
+      "main": [
+        [
+          {
+            "node": "Detectar Opt-Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detectar Opt-Out": {
+      "main": [
+        [
+          {
+            "node": "Resposta Opt-Out",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Promptzeiros AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resposta Opt-Out": {
+      "main": [
+        [
+          {
+            "node": "Send via Evolution API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Promptzeiros AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Sanitize Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI GPT-4o-mini": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Promptzeiros AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory (Demo)": {
+      "ai_memory": [
+        [
+          {
+            "node": "Promptzeiros AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sanitize Output": {
+      "main": [
+        [
+          {
+            "node": "Send via Evolution API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": []
+}
